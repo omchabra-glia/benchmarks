@@ -157,6 +157,9 @@ def make_llm(usage_id="agent"):
         base_url=os.environ["LLM_BASE_URL"],
         api_version=os.environ.get("LLM_API_VERSION"),
         api_key=SecretStr(os.environ["LLM_API_KEY"]),
+        # Ride out shared-endpoint rate-limit spikes under parallel runs.
+        num_retries=int(os.environ.get("LLM_NUM_RETRIES", "10")),
+        retry_max_wait=int(os.environ.get("LLM_RETRY_MAX_WAIT", "120")),
     )
 
 
