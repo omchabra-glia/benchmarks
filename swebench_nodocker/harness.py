@@ -196,6 +196,17 @@ def run_one(row, max_iter=100, grade_timeout=1800):
         )
         convo.send_message(instruction(row))
         convo.run()
+        # capture real usage metrics
+        cost, tokens = None, {}
+        try:
+            m = convo.conversation_stats.get_combined_metrics()
+            cost = getattr(m, "accumulated_cost", None)
+            tu = getattr(m, "accumulated_token_usage", None)
+            if tu is not None:
+                tokens = {"prompt": getattr(tu, "prompt_tokens", None),
+                          "completion": getattr(tu, "completion_tokens", None)}
+        except Exception:
+            pass
         ws.execute_command("cd /testbed && git add -A", timeout=60)
         patch = ws.execute_command(
             f"cd /testbed && git diff --cached {base}", timeout=120
@@ -222,13 +233,17 @@ def run_one(row, max_iter=100, grade_timeout=1800):
         except Exception as e:
             report = {"grade_error": str(e)}
             resolved = False
-        logger.info(f"[{iid}] resolved={resolved} patch_len={len(patch)}")
+        logger.info(
+            f"[{iid}] resolved={resolved} patch_len={len(patch)} cost={cost} tokens={tokens}"
+        )
         return {
             "instance_id": iid,
             "resolved": resolved,
             "patch": patch,
             "error": None,
             "report": report.get(iid, report),
+            "cost": cost,
+            "tokens": tokens,
         }
     except Exception as e:
         logger.warning(f"[{iid}] ERROR {type(e).__name__}: {e}")
@@ -277,9 +292,14 @@ def main():
             if r["resolved"]
             else ("ERROR: " + (r["error"] or "")[:50] if r["error"] else "unresolved")
         )
-        print(f"  {r['instance_id']:<40} {s}")
+        c = r.get("cost")
+        print(f"  {r['instance_id']:<40} {s:<12} cost={c}")
+    total_cost = sum((r.get("cost") or 0) for r in results)
+    total_prompt = sum((r.get("tokens") or {}).get("prompt") or 0 for r in results)
+    total_completion = sum((r.get("tokens") or {}).get("completion") or 0 for r in results)
     print(
-        f"RESOLVED {sum(r['resolved'] for r in results)}/{len(results)}  -> {args.out}"
+        f"RESOLVED {sum(r['resolved'] for r in results)}/{len(results)}  "
+        f"| cost=${total_cost:.4f}  prompt_tok={total_prompt:,} completion_tok={total_completion:,}  -> {args.out}"
     )
 
 
